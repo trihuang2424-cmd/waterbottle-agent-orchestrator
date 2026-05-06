@@ -10,6 +10,7 @@ The orchestrator does not replace either agent:
 - Image generation creates one image per slot.
 - `waterbottle-review-agent` reviews the generated image against source photos and prompt assets.
 - This orchestrator stores state and prepares task packets between those steps.
+- The orchestrator may invoke the local prompt/review agents through `orchestrator.py run-agent`, using a configured local backend such as Codex CLI or Hermes. The runner must treat agents as read-only task processors: combine the role `AGENTS.md` with a task file, attach relevant images, save the final response, and avoid letting the called agent edit project files directly.
 
 ## Workflow Rules
 
@@ -35,14 +36,18 @@ Use `orchestrator.py`:
 python3 orchestrator.py init --name test-cup --platform taobao --source /path/a.jpg --source /path/b.jpg
 python3 orchestrator.py status --run <run-id>
 python3 orchestrator.py make-source-classification-task --run <run-id>
+python3 orchestrator.py run-agent --run <run-id> --role prompt --task 01_prompt_agent/source_classification_task.md --out 01_assets/source_classification.md
 python3 orchestrator.py set-source-classification --run <run-id> --file /path/source_classification.md
 python3 orchestrator.py make-master-plan-task --run <run-id>
+python3 orchestrator.py run-agent --run <run-id> --role prompt --task 01_masters/master_plan_task.md --out 01_masters/master_plan.json
 python3 orchestrator.py set-master-plan --run <run-id> --file /path/master_plan.json
 python3 orchestrator.py make-master-tasks --run <run-id>
+python3 orchestrator.py run-agent --run <run-id> --role prompt --task 01_masters/front_closed_blue/master_task.md --out 01_masters/front_closed_blue/prompt.md
 python3 orchestrator.py set-master-prompt --run <run-id> --master front_closed_blue --file /path/master_prompt.md
 python3 orchestrator.py set-master --run <run-id> --master front_closed_blue --image /path/master.png
 python3 orchestrator.py triage-master --run <run-id> --master front_closed_blue --decision accept --note "usable"
 python3 orchestrator.py make-master-review-task --run <run-id> --master front_closed_blue
+python3 orchestrator.py run-agent --run <run-id> --role review --task 01_masters/front_closed_blue/review_task.md --out 01_masters/front_closed_blue/review.md
 python3 orchestrator.py set-master-review --run <run-id> --master front_closed_blue --file /path/master_review.md
 python3 orchestrator.py make-master-revision-task --run <run-id> --master front_closed_blue
 python3 orchestrator.py make-slot-control-packet --run <run-id> --slot main_2

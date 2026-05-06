@@ -25,6 +25,45 @@ The command creates `runs/<run-id>/`.
 
 Use this when source photos contain multiple product states, angles, or SKU colors and you want faster, steadier generation.
 
+## Local Agent Runner
+
+The orchestrator can now call the local prompt/review agents through a local CLI backend. The default backend is `codex`.
+
+Run the prompt agent on any generated prompt-agent task:
+
+```bash
+python3 orchestrator.py run-agent \
+  --run <run-id> \
+  --role prompt \
+  --task 01_prompt_agent/asset_extraction_task.md \
+  --out 01_prompt_agent/asset_extraction_output.md
+```
+
+Run the review agent on any generated review task:
+
+```bash
+python3 orchestrator.py run-agent \
+  --run <run-id> \
+  --role review \
+  --task 02_slots/main_1/review_task.md \
+  --out 02_slots/main_1/review_agent_output.md
+```
+
+The runner reads the appropriate local agent definition:
+
+```text
+/Users/andrea/jacky/waterbottle-prompt-agent/AGENTS.md
+/Users/andrea/jacky/waterbottle-review-agent/AGENTS.md
+```
+
+It combines that agent definition with the task file, attaches image files found in the task/run state, runs the selected backend, and saves the final response to the output file. Use `--dry-run` to inspect the command without spending a model call:
+
+```bash
+python3 orchestrator.py run-agent --run <run-id> --role prompt --task 01_prompt_agent/asset_extraction_task.md --dry-run
+```
+
+Use `--no-images` for text-only calls, or `--backend hermes` to call Hermes instead of Codex.
+
 ### Step 1A: Classify Source Photos
 
 ```bash
@@ -277,14 +316,18 @@ Taobao runs create:
 
 ```bash
 python3 orchestrator.py make-source-classification-task --run <run-id>
+python3 orchestrator.py run-agent --run <run-id> --role prompt --task 01_prompt_agent/source_classification_task.md --out 01_assets/source_classification.md
 python3 orchestrator.py set-source-classification --run <run-id> --file /path/source_classification.md
 python3 orchestrator.py make-master-plan-task --run <run-id>
+python3 orchestrator.py run-agent --run <run-id> --role prompt --task 01_masters/master_plan_task.md --out 01_masters/master_plan.json
 python3 orchestrator.py set-master-plan --run <run-id> --file /path/master_plan.json
 python3 orchestrator.py make-master-tasks --run <run-id>
+python3 orchestrator.py run-agent --run <run-id> --role prompt --task 01_masters/front_closed_blue/master_task.md --out 01_masters/front_closed_blue/prompt.md
 python3 orchestrator.py set-master-prompt --run <run-id> --master front_closed_blue --file /path/master_prompt.md
 python3 orchestrator.py set-master --run <run-id> --master front_closed_blue --image /path/master.png
 python3 orchestrator.py triage-master --run <run-id> --master front_closed_blue --decision accept --note "usable"
 python3 orchestrator.py make-master-review-task --run <run-id> --master front_closed_blue
+python3 orchestrator.py run-agent --run <run-id> --role review --task 01_masters/front_closed_blue/review_task.md --out 01_masters/front_closed_blue/review.md
 python3 orchestrator.py set-master-review --run <run-id> --master front_closed_blue --file /path/master_review.md
 python3 orchestrator.py make-master-revision-task --run <run-id> --master front_closed_blue
 python3 orchestrator.py make-slot-control-packet --run <run-id> --slot main_2

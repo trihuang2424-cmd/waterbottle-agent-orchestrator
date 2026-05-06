@@ -9,6 +9,7 @@ import json
 import re
 import shutil
 import os
+import subprocess
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -169,12 +170,155 @@ def find_named_file(directory: Path, stem: str, extensions: list[str]) -> Path |
     return None
 
 
+def is_image_path(path: Path) -> bool:
+    return path.suffix.lower() in IMAGE_EXTENSIONS
+
+
+def markdown_path_candidates(text: str) -> list[Path]:
+    candidates = []
+    patterns = [
+        r"`([^`]+\.(?:png|jpg|jpeg|webp))`",
+        r"(?<![\w/.-])(/[^`\s]+\.(?:png|jpg|jpeg|webp))",
+    ]
+    for pattern in patterns:
+        for match in re.finditer(pattern, text, flags=re.IGNORECASE):
+            candidates.append(Path(match.group(1)).expanduser())
+    return candidates
+
+
 def source_list_markdown(sources: list[dict[str, str]]) -> str:
     lines = []
     for src in sources:
         path = src.get("copied_path") or src["path"]
         lines.append(f"- {src['id']}: `{path}`")
     return "\n".join(lines)
+
+
+def role_agent_path(state: dict[str, Any], role: str) -> Path:
+    if role == "prompt":
+        return Path(state["prompt_agent"])
+    if role == "review":
+        return Path(state["review_agent"])
+    raise SystemExit(f"Unknown agent role: {role}")
+
+
+def build_agent_prompt(state: dict[str, Any], role: str, task_path: Path) -> str:
+    agent_path = role_agent_path(state, role)
+    if not agent_path.exists():
+        raise SystemExit(f"Missing {role} agent prompt: {agent_path}")
+    if not task_path.exists():
+        raise SystemExit(f"Missing task file: {task_path}")
+    agent_prompt = agent_path.read_text(encoding="utf-8")
+    task_text = task_path.read_text(encoding="utf-8")
+    return f"""You are being invoked as the local `{role}` agent.
+
+Follow this agent behavior definition exactly:
+
+```markdown
+{agent_prompt}
+```
+
+Run this task:
+
+```markdown
+{task_text}
+```
+
+Important execution constraints:
+- Do not edit files.
+- Do not run shell commands.
+- Return only the requested agent output for the task.
+- If the task asks for markdown, return markdown only.
+- If the task asks for JSON, return JSON only.
+"""
+
+
+def source_image_paths(state: dict[str, Any]) -> list[Path]:
+    paths = []
+    for source in state.get("sources", []):
+        raw = source.get("copied_path") or source.get("path")
+        if not raw:
+            continue
+        path = Path(raw).expanduser()
+        if path.exists() and path.is_file() and is_image_path(path):
+            paths.append(path)
+    return paths
+
+
+def agent_image_paths(state: dict[str, Any], role: str, task_path: Path) -> list[Path]:
+    text = task_path.read_text(encoding="utf-8")
+    seen = set()
+    images = []
+    for path in markdown_path_candidates(text):
+        if path.exists() and path.is_file() and is_image_path(path) and path not in seen:
+            images.append(path)
+            seen.add(path)
+    if role in {"prompt", "review"}:
+        for path in source_image_paths(state):
+            if path not in seen:
+                images.append(path)
+                seen.add(path)
+    return images
+
+
+def default_agent_output_path(task_path: Path) -> Path:
+    return task_path.with_name(f"{task_path.stem}_agent_output.md")
+
+
+def build_agent_command(backend: str, output_path: Path, image_paths: list[Path]) -> list[str]:
+    if backend == "codex":
+        command = [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "-C",
+            str(ROOT),
+            "--sandbox",
+            "read-only",
+            "--output-last-message",
+            str(output_path),
+        ]
+        for image in image_paths:
+            command.extend(["--image", str(image)])
+        command.append("-")
+        return command
+    if backend == "hermes":
+        command = ["hermes", "chat", "-Q"]
+        for image in image_paths:
+            command.extend(["--image", str(image)])
+        return command
+    raise SystemExit(f"Unknown backend: {backend}")
+
+
+def run_local_agent(
+    state: dict[str, Any],
+    role: str,
+    task_path: Path,
+    output_path: Path,
+    backend: str,
+    include_images: bool,
+    dry_run: bool = False,
+) -> list[str]:
+    prompt = build_agent_prompt(state, role, task_path)
+    image_paths = agent_image_paths(state, role, task_path) if include_images else []
+    command = build_agent_command(backend, output_path, image_paths)
+    if dry_run:
+        return command
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if backend == "codex":
+        result = subprocess.run(command, input=prompt, text=True, capture_output=True)
+        if result.returncode != 0:
+            raise SystemExit(result.stderr or result.stdout or f"Agent command failed: {command}")
+        if not output_path.exists():
+            write_text(output_path, result.stdout)
+        return command
+    if backend == "hermes":
+        result = subprocess.run(command + ["-q", prompt], text=True, capture_output=True)
+        if result.returncode != 0:
+            raise SystemExit(result.stderr or result.stdout or f"Agent command failed: {command}")
+        write_text(output_path, result.stdout)
+        return command
+    raise SystemExit(f"Unknown backend: {backend}")
 
 
 def select_sources(state: dict[str, Any], source_ids: list[str]) -> list[dict[str, str]]:
@@ -820,6 +964,29 @@ def cmd_make_slot_control_packet(args: argparse.Namespace) -> None:
     print(f"Wrote: {out}")
 
 
+def cmd_run_agent(args: argparse.Namespace) -> None:
+    run_dir = run_path(args.run)
+    task_path = Path(args.task).expanduser()
+    if not task_path.is_absolute():
+        task_path = run_dir / task_path
+    output_path = Path(args.out).expanduser() if args.out else default_agent_output_path(task_path)
+    if not output_path.is_absolute():
+        output_path = run_dir / output_path
+    command = run_local_agent(
+        state=load_state(run_dir),
+        role=args.role,
+        task_path=task_path,
+        output_path=output_path,
+        backend=args.backend,
+        include_images=not args.no_images,
+        dry_run=args.dry_run,
+    )
+    if args.dry_run:
+        print(" ".join(command))
+    else:
+        print(f"Wrote agent output: {output_path}")
+
+
 def cmd_make_all_prompt_tasks(args: argparse.Namespace) -> None:
     run_dir = run_path(args.run)
     count = 0
@@ -1218,6 +1385,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--run", required=True)
     p.add_argument("--slot", required=True)
     p.set_defaults(func=cmd_make_slot_control_packet)
+
+    p = sub.add_parser("run-agent", help="Run the local prompt or review agent against a task file")
+    p.add_argument("--run", required=True)
+    p.add_argument("--role", required=True, choices=["prompt", "review"])
+    p.add_argument("--task", required=True, help="Task path, absolute or relative to the run directory")
+    p.add_argument("--out", help="Output path, absolute or relative to the run directory")
+    p.add_argument("--backend", default="codex", choices=["codex", "hermes"])
+    p.add_argument("--no-images", action="store_true", help="Do not attach image files to the local agent call")
+    p.add_argument("--dry-run", action="store_true", help="Print the local agent command without executing it")
+    p.set_defaults(func=cmd_run_agent)
 
     p = sub.add_parser("make-all-prompt-tasks", help="Create prompt-agent tasks for all slots")
     p.add_argument("--run", required=True)
