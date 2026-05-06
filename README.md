@@ -49,11 +49,11 @@ python3 orchestrator.py run-agent \
   --out 02_slots/main_1/review_agent_output.md
 ```
 
-The runner reads the appropriate local agent definition:
+The runner reads the appropriate bundled agent definition:
 
 ```text
-/Users/andrea/jacky/waterbottle-prompt-agent/AGENTS.md
-/Users/andrea/jacky/waterbottle-review-agent/AGENTS.md
+agents/waterbottle-prompt-agent/AGENTS.md
+agents/waterbottle-review-agent/AGENTS.md
 ```
 
 It combines that agent definition with the task file, attaches image files found in the task/run state, runs the selected backend, and saves the final response to the output file. Use `--dry-run` to inspect the command without spending a model call:

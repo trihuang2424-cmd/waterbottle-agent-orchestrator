@@ -18,8 +18,8 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parent
 JACKY_ROOT = ROOT.parent
-PROMPT_AGENT = JACKY_ROOT / "waterbottle-prompt-agent" / "AGENTS.md"
-REVIEW_AGENT = JACKY_ROOT / "waterbottle-review-agent" / "AGENTS.md"
+PROMPT_AGENT = ROOT / "agents" / "waterbottle-prompt-agent" / "AGENTS.md"
+REVIEW_AGENT = ROOT / "agents" / "waterbottle-review-agent" / "AGENTS.md"
 RUNS_DIR = ROOT / "runs"
 
 

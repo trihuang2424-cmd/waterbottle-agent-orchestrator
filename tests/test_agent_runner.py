@@ -29,6 +29,12 @@ def make_run(root: Path) -> Path:
 
 
 class AgentRunnerTests(unittest.TestCase):
+    def test_default_agent_paths_are_bundled_in_repository(self):
+        self.assertTrue(str(orchestrator.PROMPT_AGENT).startswith(str(orchestrator.ROOT)))
+        self.assertTrue(str(orchestrator.REVIEW_AGENT).startswith(str(orchestrator.ROOT)))
+        self.assertEqual(orchestrator.PROMPT_AGENT.name, "AGENTS.md")
+        self.assertEqual(orchestrator.REVIEW_AGENT.name, "AGENTS.md")
+
     def test_agent_prompt_combines_role_prompt_and_task(self):
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = make_run(Path(tmp))

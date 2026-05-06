@@ -10,7 +10,7 @@ The orchestrator does not replace either agent:
 - Image generation creates one image per slot.
 - `waterbottle-review-agent` reviews the generated image against source photos and prompt assets.
 - This orchestrator stores state and prepares task packets between those steps.
-- The orchestrator may invoke the local prompt/review agents through `orchestrator.py run-agent`, using a configured local backend such as Codex CLI or Hermes. The runner must treat agents as read-only task processors: combine the role `AGENTS.md` with a task file, attach relevant images, save the final response, and avoid letting the called agent edit project files directly.
+- The orchestrator may invoke the bundled prompt/review agents through `orchestrator.py run-agent`, using a configured local backend such as Codex CLI or Hermes. The runner must treat agents as read-only task processors: combine the role `AGENTS.md` with a task file, attach relevant images, save the final response, and avoid letting the called agent edit project files directly.
 
 ## Workflow Rules
 
